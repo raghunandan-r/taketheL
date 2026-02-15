@@ -1,0 +1,22 @@
+export const STATION_ORDER = [
+  '8th_ave', '6th_ave', 'union_sq', '3rd_ave', '1st_ave',
+  'bedford_st', 'lorimer_st', 'graham_st', 'grand_st',
+  'jamaica_terminus', 'canarsie'
+]
+
+export const VALID_STATIONS = STATION_ORDER
+
+export const TEST_USERS = {
+  userA: '00000000-0000-0000-0000-000000000001',
+  userB: '00000000-0000-0000-0000-000000000002',
+}
+
+export const STATION_VENUES = {
+  bedford_st: [
+    { name: 'The Levee', category: 'bar' },
+    { name: 'Cafe Reggio', category: 'coffee' },
+  ],
+  lorimer_st: [
+    { name: 'Mochi', category: 'food' },
+  ],
+}
