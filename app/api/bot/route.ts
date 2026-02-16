@@ -7,57 +7,78 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-export async function POST(request: NextRequest) {
+async function authenticate(request: NextRequest): Promise<{ userId: string | null; error: NextResponse | null }> {
   const authHeader = request.headers.get('Authorization')
-  if (!authHeader?.startsWith('Bearer ')) {
-    return NextResponse.json({ error: 'Missing auth' }, { status: 401 })
+  
+  // Check for bot API key
+  if (authHeader?.startsWith('Bot ')) {
+    const apiKey = authHeader.slice(4)
+    const keyHash = Buffer.from(apiKey).toString('hex')
+    
+    const { data: userId, error } = await supabase.rpc('verify_bot_api_key', {
+      p_key_hash: keyHash
+    })
+    
+    if (error || !userId) {
+      return { userId: null, error: NextResponse.json({ error: 'Invalid API key' }, { status: 401 }) }
+    }
+    
+    return { userId, error: null }
   }
+  
+  // Check for Supabase auth token
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7)
+    const { data: { user }, error } = await supabase.auth.getUser(token)
+    
+    if (error || !user) {
+      return { userId: null, error: NextResponse.json({ error: 'Invalid auth' }, { status: 401 }) }
+    }
+    
+    return { userId: user.id, error: null }
+  }
+  
+  return { 
+    userId: null, 
+    error: NextResponse.json({ error: 'Missing auth' }, { status: 401 }) 
+  }
+}
 
-  const token = authHeader.slice(7)
-  const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Invalid auth' }, { status: 401 })
-  }
+export async function POST(request: NextRequest) {
+  const { userId, error } = await authenticate(request)
+  if (error) return error
 
   const body = await request.json()
   const { action } = body
 
   switch (action) {
     case 'register':
-      return handleRegister(user.id, body)
+      return handleRegister(userId!, body)
     case 'discover':
-      return handleDiscover(user.id, body)
+      return handleDiscover(userId!, body)
     case 'propose':
-      return handlePropose(user.id, body)
+      return handlePropose(userId!, body)
     case 'respond':
-      return handleRespond(user.id, body)
+      return handleRespond(userId!, body)
     case 'heartbeat':
-      return handleHeartbeat(user.id, body)
+      return handleHeartbeat(userId!, body)
     default:
       return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   }
 }
 
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('Authorization')
-  if (!authHeader?.startsWith('Bearer ')) {
-    return NextResponse.json({ error: 'Missing auth' }, { status: 401 })
-  }
-
-  const token = authHeader.slice(7)
-  const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Invalid auth' }, { status: 401 })
-  }
+  const { userId, error } = await authenticate(request)
+  if (error) return error
 
   const { searchParams } = new URL(request.url)
   const action = searchParams.get('action')
 
   switch (action) {
     case 'matches':
-      return handleGetMatches(user.id)
+      return handleGetMatches(userId!)
     case 'proposals':
-      return handleGetProposals(user.id)
+      return handleGetProposals(userId!)
     default:
       return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   }
@@ -84,26 +105,15 @@ async function handleRegister(userId: string, body: { station_id: string }) {
 async function handleDiscover(userId: string, body: { station_id: string; limit?: number }) {
   const { station_id, limit = 10 } = body
 
-  const { data, error } = await supabase
-    .from('bot_sessions')
-    .select('user_id, station_id, profiles(nickname, interests)')
-    .eq('station_id', station_id)
-    .neq('user_id', userId)
-    .limit(limit)
+  const { data, error } = await supabase.rpc('discover_bots', {
+    p_station_id: station_id,
+    p_user_id: userId,
+    p_limit: limit
+  })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const bots = (data ?? []).map((b: Record<string, unknown>) => ({
-    id: b.user_id,
-    user_id: b.user_id,
-    nickname: (b.profiles as Record<string, unknown>)?.nickname ?? 'Anonymous',
-    specificity: ((b.profiles as Record<string, unknown>)?.interests as string[])?.length ?? 0,
-    station_id: b.station_id
-  }))
-
-  bots.sort((a: { specificity: number }, b: { specificity: number }) => b.specificity - a.specificity)
-
-  return NextResponse.json({ bots })
+  return NextResponse.json({ bots: data || [] })
 }
 
 async function handlePropose(userId: string, body: { target_user_id: string; station_id: string; idempotency_key: string }) {
