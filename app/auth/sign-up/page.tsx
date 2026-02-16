@@ -9,10 +9,16 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Train } from "lucide-react"
 
+const INTEREST_OPTIONS = [
+  "music", "art", "books", "movies", "gaming", "cooking", 
+  "fitness", "travel", "tech", "photography", "writing", "coffee"
+]
+
 export default function SignUpPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [nickname, setNickname] = useState("")
+  const [interests, setInterests] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
@@ -28,7 +34,10 @@ export default function SignUpPage() {
       password,
       options: {
         emailRedirectTo: `${window.location.origin}/auth/callback`,
-        data: { nickname },
+        data: { 
+          nickname,
+          interests,
+        },
       },
     })
 
@@ -40,6 +49,14 @@ export default function SignUpPage() {
 
     router.push("/auth/sign-up-success")
     router.refresh()
+  }
+
+  const toggleInterest = (interest: string) => {
+    setInterests(prev => 
+      prev.includes(interest) 
+        ? prev.filter(i => i !== interest)
+        : [...prev, interest]
+    )
   }
 
   return (
@@ -95,12 +112,31 @@ export default function SignUpPage() {
             autoComplete="nickname"
           />
         </div>
+        <div className="space-y-2">
+          <Label>Interests (select at least 1)</Label>
+          <div className="flex flex-wrap gap-2">
+            {INTEREST_OPTIONS.map(interest => (
+              <button
+                key={interest}
+                type="button"
+                onClick={() => toggleInterest(interest)}
+                className={`px-3 py-1 text-sm rounded-full border transition-colors ${
+                  interests.includes(interest)
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background border-input hover:bg-accent"
+                }`}
+              >
+                {interest}
+              </button>
+            ))}
+          </div>
+        </div>
         {error && (
           <p className="text-sm text-destructive" role="alert">
             {error}
           </p>
         )}
-        <Button type="submit" className="w-full" disabled={loading}>
+        <Button type="submit" className="w-full" disabled={loading || interests.length === 0}>
           {loading ? "Creating account…" : "Create account"}
         </Button>
       </form>

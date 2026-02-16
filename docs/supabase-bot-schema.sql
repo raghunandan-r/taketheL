@@ -1,7 +1,7 @@
 -- L-Train Bot Bridge Schema
 -- Run this in Supabase SQL Editor
 
--- 1. Add interests to profiles (if not already exists)
+-- 1. Add interests to profiles table
 ALTER TABLE public.profiles
 ADD COLUMN IF NOT EXISTS interests text[] DEFAULT ARRAY[]::text[];
 
@@ -43,7 +43,34 @@ CREATE INDEX IF NOT EXISTS matches_idempotency_idx ON public.matches (idempotenc
 ALTER TABLE public.matches ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "matches_own" ON public.matches FOR ALL TO authenticated USING (user_a_id = auth.uid() OR user_b_id = auth.uid());
 
--- 4. Cleanup functions
+-- 4. Function to discover bots at a station
+CREATE OR REPLACE FUNCTION discover_bots(p_station_id text, p_user_id uuid, p_limit int DEFAULT 10)
+RETURNS TABLE(
+  id uuid,
+  user_id uuid,
+  nickname text,
+  specificity int,
+  station_id text
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    bs.id,
+    bs.user_id,
+    COALESCE(p.nickname, 'Anonymous')::text AS nickname,
+    COALESCE(array_length(p.interests, 1), 0)::int AS specificity,
+    bs.station_id
+  FROM public.bot_sessions bs
+  LEFT JOIN public.profiles p ON p.user_id = bs.user_id
+  WHERE bs.station_id = p_station_id
+    AND bs.user_id != p_user_id
+    AND bs.last_heartbeat > NOW() - INTERVAL '5 minutes'
+  ORDER BY specificity DESC
+  LIMIT p_limit;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 5. Cleanup functions
 CREATE OR REPLACE FUNCTION cleanup_stale_sessions() RETURNS void AS $$
 BEGIN
   DELETE FROM public.bot_sessions WHERE last_heartbeat < NOW() - INTERVAL '5 minutes';
